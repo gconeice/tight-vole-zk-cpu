@@ -11,5 +11,7 @@ int main() {
     ZKCPU zkcpu(4,4,xxx);
     zkcpu.rand_cpu();
     zkcpu.print();
+    //zkcpu.test_eval_f5();
+    zkcpu.test_proof_f5(4);
     return 0;
 }
