@@ -118,9 +118,26 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     std::vector<f61> topo_vec[branch_size];
     for (int i = 0; i < branch_size; i++) zkcpu.br[i].comp_topo_vec_pselect<f61>(f61_chi, i, topo_vec[i]);    
 
-    // P: commits the (entire) topology vector    
+    // P: commits the (entire) topology vector cv
+    std::vector<IntFp> cv(path_length * 2);
+    if (party == ALICE) {
+        size_t scan_i = 0;
+        for (int i = 0; i < cids.size(); i++) {
+            uint64_t cid = cids[i];
+            for (int j = 0; j < topo_vec[cid].size(); j++) cv[scan_i++] = IntFp(topo_vec[cid][j].val, ALICE);
+        }
+    } else {
+        for (int i = 0; i < path_length * 2; i++) cv[i] = IntFp(0, ALICE);
+    }
+
+    // TODO: prove p \times (1-p) = \vec{0}
 
     // TODO: prove o \otimes p = \vec{0}
+
+    // TODO: prove, for all even positions, (1-cv) \otimes p = \vec{0}
+
+    // TODO: prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
+    // This is performed by showing cv \times (1,0,0,0,...,in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)
 
 	// batch_reveal_check_zero(&tmp[0], tmp.size());
 
