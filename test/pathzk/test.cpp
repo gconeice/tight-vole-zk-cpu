@@ -18,7 +18,24 @@ using namespace std;
 int port, party;
 const int threads = 1;
 
+uint64_t comm(BoolIO<NetIO> *ios[threads]) {
+	uint64_t c = 0;
+	for(int i = 0; i < threads; ++i)
+		c += ios[i]->counter;
+	return c;
+}
+uint64_t comm2(BoolIO<NetIO> *ios[threads]) {
+	uint64_t c = 0;
+	for(int i = 0; i < threads; ++i)
+		c += ios[i]->io->counter;
+	return c;
+}
+
 void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size, size_t reg_size, size_t step) {
+
+    // testing communication
+    uint64_t com1 = comm(ios);
+	uint64_t com11 = comm2(ios);
 
     // initial zk exec
     auto init_start = clock_start();
@@ -67,6 +84,10 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         int ack;
         ZKFpExec::zk_exec->recv_data(&ack, sizeof(int));
     }
+
+	// Unit for constant offsets
+	IntFp one = IntFp(1, PUBLIC);
+	uint64_t delta = ZKFpExec::zk_exec->get_delta();    
 	
 	auto start = clock_start();
 
@@ -131,11 +152,78 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         for (int i = 0; i < path_length * 2; i++) cv[i] = IntFp(0, ALICE);
     }
 
-    // TODO: prove p \times (1-p) = \vec{0}
+    // prove p \times (1-p) = \vec{0} && last{p} = 1; I.e., p is a 0-1 program
+    IntFp notlastp = p[path_length-1].negate() + 1;
+    batch_reveal_check_zero(&notlastp, 1);
+    if (party == ALICE) {
+		uint64_t chal; // random challenge
+		ZKFpExec::zk_exec->recv_data(&chal, sizeof(uint64_t));
+        chal = chal % PR;
 
-    // TODO: prove o \otimes p = \vec{0}
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 C0 = f61::zero(), C1 = f61::zero();
+        
+        for (int i = 0; i < path_length; i++) {
+            IntFp notp = p[i].negate() + 1;
+            f61 f61_p = f61(LOW64(p[i].value));
+            f61 f61_notp = f61(LOW64(notp.value));
+            C0 += coeff * f61_p * f61_notp;
+            if (HIGH64(p[i].value) == 0) {
+                C1 += coeff * f61_p;
+            } else { // == 1
+                C1 += coeff * f61_notp;
+            }
+            coeff *= f61_chal;
+        }
 
-    // TODO: prove, for all even positions, (1-cv) \otimes p = \vec{0}
+        // mask the proofs with random_mask
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        C1 += f61(HIGH64(random_mask));
+        C1 = f61::minor(C1.val);
+        C0 += f61(LOW64(random_mask));
+
+        ZKFpExec::zk_exec->send_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->send_data(&C1, sizeof(f61));        
+
+    } else {
+		uint64_t chal; // random challenge
+		PRG().random_data(&chal, sizeof(uint64_t));
+		chal = chal % PR;
+		ZKFpExec::zk_exec->send_data(&chal, sizeof(uint64_t));	
+        
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 acc = f61::zero();
+
+        for (int i = 0; i < path_length; i++) {
+            IntFp notp = p[i].negate() + 1;
+            acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(notp.value));
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        acc += f61(LOW64(random_mask));
+        
+        f61 C0, C1;
+        ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
+
+        // std::cout << (f61(delta)*C1 + C0).val << std::endl;
+        // std::cout << acc.val << std::endl;
+        if ((f61(delta)*C1 + C0).val == acc.val) std::cout << "[Check]: p is a 0-1 program" << std::endl;
+        else {
+            std::cout << "[Cheat]: p is not a 0-1 program" << std::endl;
+            exit(-1);
+        }
+    }
+
+    // TOOD: ZKUROM (tail-heavy)
+
+    // TODO: prove, for all even positions, (1-cv) \otimes p = \vec{0}; I.e., tail heavy
+
+    // TODO: prove o \otimes p = \vec{0}    
 
     // TODO: prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
     // This is performed by showing () \times (1,0,0,...) + (chi^? \odot (1,1,1,...,chi^?,...) \otimes cv) \times (in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)    
@@ -189,9 +277,14 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 
 	finalize_zk_arith<BoolIO<NetIO>>();
 	auto timeuse = time_from(start);	
+    cout << "Path Length: " << path_length << std::endl;
 	cout << init_time+timeuse << " us\t" << party << " " << endl;
 	std::cout << std::endl;
 
+	uint64_t com2 = comm(ios) - com1;
+	uint64_t com22 = comm2(ios) - com11;
+	std::cout << "communication (B): " << com2 << std::endl;
+	std::cout << "communication (B): " << com22 << std::endl;
 
 #if defined(__linux__)
 	struct rusage rusage;

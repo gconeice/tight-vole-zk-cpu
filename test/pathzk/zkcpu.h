@@ -273,7 +273,7 @@ public:
 
     void rand_cpu() {
         for (int i = 0; i < B; i++) {
-            br.push_back(Instruction(m, i*100));
+            br.push_back(Instruction(m, 100));
             auto last = br.size();
             //br[last - 1].rand_inst(gen);
             br[last - 1].rand_inst_pselect(gen);
