@@ -115,6 +115,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 		ZKFpExec::zk_exec->send_data(&chi, sizeof(uint64_t));	        
     }
     f61 f61_chi(chi);
+    f61 f61_chi2 = f61_chi * f61_chi;
     std::vector<f61> topo_vec[branch_size];
     for (int i = 0; i < branch_size; i++) zkcpu.br[i].comp_topo_vec_pselect<f61>(f61_chi, i, topo_vec[i]);    
 
@@ -137,7 +138,52 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     // TODO: prove, for all even positions, (1-cv) \otimes p = \vec{0}
 
     // TODO: prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
-    // This is performed by showing cv \times (1,0,0,0,...,in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)
+    // This is performed by showing () \times (1,0,0,...) + (chi^? \odot (1,1,1,...,chi^?,...) \otimes cv) \times (in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)    
+    
+    // compute add_l and shift_l
+    f61 add_l = f61::unit() + f61_chi;
+    f61 shift_l = f61_chi2;
+    for (int i = 0; i < reg_size; i++) {
+        add_l += shift_l;
+        shift_l *= f61_chi2;
+    }
+
+    // generate shift_l \odot (1,1,1,...,chi^?,...) \otimes cv
+    // linear scan to generate (1,1,1,...,chi^?,...)
+    std::vector<IntFp> s_jump(path_length);
+    IntFp cur = IntFp(1, PUBLIC);
+    f61 tmp_chi = f61_chi2;
+    for (int i = 0; i < path_length; i++) {
+        // s_jump[2*i] = s_jump[2*i+1] = cur;
+        s_jump[i] = cur * shift_l.val;
+        // update the next cur
+        IntFp next_cur = p[i] * tmp_chi.val + (p[i].negate() + 1) * cur;
+        cur = next_cur;
+        tmp_chi *= f61_chi2;
+    }
+
+    // TODO: switch from brute force to (generalized) inner product optimization    
+    IntFp sum_l(add_l.val, PUBLIC);
+    for (int i = 0; i < path_length; i++) {
+        sum_l = sum_l + s_jump[i] * cv[2*i] * in[i];
+        sum_l = sum_l + s_jump[i] * cv[2*i+1] * o[i];
+    }    
+    IntFp sum_r(0, PUBLIC);
+    tmp_chi = f61::unit();
+    for (int i = 0; i < path_length; i++) {
+        sum_r = sum_r + l[i] * tmp_chi.val; tmp_chi *= f61_chi;
+        sum_r = sum_r + r[i] * tmp_chi.val; tmp_chi *= f61_chi;
+    }
+    // add by add_r
+    sum_r = sum_r + tmp_chi.val; tmp_chi *= f61_chi;
+    sum_r = sum_r + tmp_chi.val; tmp_chi *= f61_chi;
+    for (int i = 0; i < reg_size; i++) {
+        sum_r = sum_r + tmp_chi.val; tmp_chi *= f61_chi;
+        sum_r = sum_r + (tmp_chi * final_reg[i]).val; tmp_chi *= f61_chi;
+    }
+    
+    IntFp iszero = sum_l + sum_r.negate();
+    batch_reveal_check_zero(&iszero, 1);
 
 	// batch_reveal_check_zero(&tmp[0], tmp.size());
 
