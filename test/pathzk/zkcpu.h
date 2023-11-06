@@ -530,6 +530,65 @@ public:
         std::cout << sum_l.val-sum_r.val << std::endl;
     }
 
+
+    void rand_f61_witness_by_step(std::size_t step, std::vector<std::size_t> &cids, std::vector<f61> &in, std::vector<f61> &l, std::vector<f61> &r, std::vector<f61> &o, std::vector<f61> &final_reg) {
+        std::vector<f61> reg[2];
+        block s_seed; 
+        PRG().random_block(&s_seed, 1);
+        PRG prg_s(&s_seed); 
+
+        std::size_t now = 0; // rotate        
+        for (int i = 0; i < m; i++) reg[now].push_back(f61());        
+
+        cids.clear();
+        in.clear();
+        l.clear(); r.clear(); o.clear();
+        final_reg.clear();
+        
+        for (int i = 0; i < step; i++, now = 1 - now) {
+            std::size_t cid = reg[now][m-1].val;
+            cids.push_back(cid);
+            std::size_t n = br[cid].n;
+            for (int j = 0; j < n+m+1; j++) {
+                f61 x(gen_rand_f61(prg_s) % PR);
+                reg[now].push_back(x);
+                in.push_back(x);
+            }
+            f61 next_cid(gen_rand_f61(prg_s) % B);
+            reg[now].push_back(next_cid);
+            in.push_back(next_cid);
+
+            // spec output
+            // std::cout << i << ":" << std::endl;
+            // for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;
+            
+            // execute
+            std::vector<f61> lwire, rwire;
+            br[cid].EvalWithExtWit<f61>(reg[now], reg[1-now], lwire, rwire);
+
+            // setup l,r,o
+            // the fisrt 1*1=1
+            l.push_back(f61(1)); r.push_back(f61(1)); o.push_back(f61(1));
+            // to capture m reg
+            for (int j = 0; j < m; j++) {
+                l.push_back(f61(1));
+                r.push_back(reg[now][j]);
+                o.push_back(reg[now][j]);
+            }
+            // multi tuples in the middle
+            for (int j = 0; j < lwire.size(); j++) {
+                l.push_back(lwire[j]);
+                r.push_back(rwire[j]);
+                o.push_back(lwire[j] * rwire[j]);
+            }
+            // the last 1*0=0
+            l.push_back(f61(1)); r.push_back(f61(0)); o.push_back(f61(0));
+
+            // p selects the next instruction
+            reg[1-now].push_back(next_cid);
+        }        
+    }
+
 };
 
 #endif
