@@ -7,10 +7,10 @@
 
 class f5 {
 public:
-    std::size_t val;
+    int val;
 
     f5() {val = 0;}
-    f5(std::size_t val) : val(val) {}
+    f5(int val) : val(((val%5)+5)%5) {}
 
     f5 & operator+= (f5 const & rhs) { 
         val += rhs.val; 
@@ -38,7 +38,13 @@ public:
     f5 operator*(f5 rhs) &  { return rhs *= *this; }
     f5 operator*(f5 rhs) && { return rhs *= std::move(*this); }
 
+    static f5 unit() {
+        return f5(1);
+    }
 
+    static f5 zero() {
+        return f5(0);
+    }
 };
 
 enum OPTYPE {
@@ -57,6 +63,9 @@ public:
     std::size_t m; // number of register
     std::size_t n; // number of ``useful'' multiplication
     std::vector<BaseOp> bank;
+    std::vector<std::size_t> lid;
+    std::vector<std::size_t> rid;
+    std::vector<std::size_t> oid;    
 
     Instruction(std::size_t m, std::size_t n) : m(m), n(n) {}
 
@@ -71,7 +80,9 @@ public:
             if (l > r) std::swap(l, r);
             OPTYPE optype = distr(gen) % 2 ? OPTYPE::ADD : OPTYPE::MUL;
             bank.push_back(BaseOp(optype, l, r));
-            if (optype == OPTYPE::MUL) cur--;
+            if (optype == OPTYPE::MUL) {                
+                cur--;
+            }
         }
     }
 
@@ -86,7 +97,12 @@ public:
             if (l > r) std::swap(l, r);
             OPTYPE optype = distr(gen) % 2 ? OPTYPE::ADD : OPTYPE::MUL;
             bank.push_back(BaseOp(optype, l, r));
-            if (optype == OPTYPE::MUL) cur--;
+            if (optype == OPTYPE::MUL) {
+                lid.push_back(l);
+                rid.push_back(r);
+                oid.push_back(last);                
+                cur--;
+            }
         }
     }    
 
@@ -133,6 +149,57 @@ public:
         }
         output.clear();
         for (int i = wire.size() - m + 1; i < wire.size(); i++) output.push_back(wire[i]);
+    }    
+
+    template <typename T>
+    void comp_topo_vec_pselect(T chi, int bid, std::vector<T> &topo_vec) {
+        std::vector<T> wire(bank.size());
+        T coeff = T::unit();
+        T constant = T::zero();
+
+        // set up initial values on l and r
+        for (int i = 0; i < n; i++) {
+            // setup lid
+            wire[lid[i]] += coeff;
+            coeff *= chi;            
+            // setup rid
+            wire[rid[i]] += coeff;
+            coeff *= chi;
+        }
+        // set up initial values on C's output wire: left (1), right (reg[m-1]-bid)
+        constant += coeff; coeff *= chi;
+        constant += T(-bid) * coeff; wire[m-1] += coeff; coeff *= chi;
+        // set up inital values on ``special'' 1*1=1 tuple
+        constant += coeff; coeff *= chi;
+        constant += coeff; coeff *= chi;
+        // set up initial values on l/r of register (in the next instruction), for the first m-1 registers
+        for (int i = bank.size() - m + 1; i < bank.size(); i++) {
+            constant += coeff; coeff *= chi;
+            wire[i] += coeff; coeff *= chi;
+        }
+        // set up initial values on l/r of register (in the next instruction), for the final register
+        constant += coeff; coeff *= chi;
+        wire[n+2*m+1] += coeff; coeff *= chi;
+
+        // evaluate the circuit backward
+        for (int i = bank.size() - 1; i >= 0; i--) 
+            if (bank[i].op == OPTYPE::ADD) {
+                wire[bank[i].l] += wire[i];
+                wire[bank[i].r] += wire[i];
+            }
+
+        std::vector<T> tmp_o; tmp_o.clear();
+        tmp_o.push_back(constant);
+        for (int i = 0; i < m; i++) tmp_o.push_back(wire[i]);
+        for (int i = 0; i < n; i++) tmp_o.push_back(wire[oid[i]]);
+        tmp_o.push_back(T::unit());
+
+        // merge into topo_vec
+        topo_vec.clear();
+        for (int i = 0; i < n+m+2; i++) {
+            topo_vec.push_back(wire[m+i]);
+            topo_vec.push_back(tmp_o[i]);
+        }
     }    
 
 };
@@ -221,8 +288,8 @@ public:
             in.push_back(next_cid);
 
             // spec output
-            std::cout << i << ":" << std::endl;
-            for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;
+            // std::cout << i << ":" << std::endl;
+            // for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;
             
             // execute
             std::vector<f5> lwire, rwire;
@@ -253,8 +320,49 @@ public:
         // std::cout << in.size() << ' ' << l.size() << ' ' << r.size() << ' ' << o.size() << std::endl;
 
         // final state
-        std::cout << "Final:" << std::endl;
-        for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;        
+        // std::cout << "Final:" << std::endl;
+        // for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;        
+
+        f5 chi(distr(gen));
+        if (chi.val == 0) std::cout << "HHHH" << std::endl;
+        std::vector<f5> topo_vec[B];
+        for (int i = 0; i < B; i++) br[i].comp_topo_vec_pselect<f5>(chi, i, topo_vec[i]);
+
+        f5 sum_l = f5::unit() + chi;        
+        f5 coeff = chi * chi;
+        for (int i = 0; i < m; i++) {
+            sum_l += coeff; coeff *= chi;
+            coeff *= chi;
+        }
+        std::vector<f5> ll; ll.clear();
+        for (int i = 0; i < step; i++) {
+            std::size_t cid = cids[i];
+            f5 tmp_coeff = coeff;
+            for (int j = 0; j < topo_vec[cid].size(); j++) {
+                ll.push_back(topo_vec[cid][j]*coeff);
+                tmp_coeff *= chi;
+            }
+            coeff = tmp_coeff;
+        }
+        for (int i = 0; i < in.size(); i++) {
+            sum_l += ll[i*2] * in[i];
+            sum_l += ll[i*2+1] * o[i];
+        }
+
+        f5 sum_r = f5::zero();
+        coeff = f5::unit();
+        for (int i = 0; i < l.size(); i++) {
+            sum_r += coeff * l[i]; coeff *= chi;
+            sum_r += coeff * r[i]; coeff *= chi;
+        }
+        sum_r += coeff; coeff *= chi;
+        sum_r += coeff; coeff *= chi;
+        for (int i = 0; i < reg[now].size(); i++) {
+            sum_r += coeff; coeff *= chi;
+            sum_r += coeff * reg[now][i]; coeff *= chi;
+        }
+        
+        std::cout << sum_l.val << ' ' << sum_r.val << std::endl;
     }
 };
 
