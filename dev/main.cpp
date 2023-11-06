@@ -8,10 +8,10 @@ int main() {
     std::random_device rd; // obtain a random number from hardware
     auto xxx = rd();
     
-    ZKCPU zkcpu(4,4,xxx);
+    ZKCPU zkcpu(4,9,xxx);
     zkcpu.rand_cpu();
     //zkcpu.print();
     //zkcpu.test_eval_f5();
-    zkcpu.test_proof_f5(4);
+    zkcpu.test_proof_f5(100);
     return 0;
 }

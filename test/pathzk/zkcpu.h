@@ -5,12 +5,29 @@
 #include <random>
 #include <iostream>
 
+#include "emp-zk/emp-zk.h"
+#include "emp-tool/emp-tool.h"
+#if defined(__linux__)
+	#include <sys/time.h>
+	#include <sys/resource.h>
+#elif defined(__APPLE__)
+	#include <unistd.h>
+	#include <sys/resource.h>
+	#include <mach/mach.h>
+#endif
+
 class f5 {
 public:
     int val;
 
     f5() {val = 0;}
     f5(int val) : val(((val%5)+5)%5) {}
+
+    static f5 minor(int x) {
+        x = -x;
+        x = ((x % 5) + 5) % 5;
+        return x;
+    }
 
     f5 & operator+= (f5 const & rhs) { 
         val += rhs.val; 
@@ -45,6 +62,45 @@ public:
     static f5 zero() {
         return f5(0);
     }
+};
+
+class f61 {
+public:
+    uint64_t val;
+
+    f61(uint64_t val) : val(val) {}
+    f61() : val(0) {}
+
+    static f61 unit() {
+        return f61(1);
+    }
+    static f61 zero() {
+        return f61(0);
+    }
+    static f61 minor(uint64_t x) {
+        return f61(PR - x);
+    }
+
+    f61 & operator+= (f61 const & rhs) { 
+        val = add_mod(val, rhs.val);         
+        return *this; 
+    }
+    f61 & operator+= (f61 && rhs) { 
+        val = add_mod(val, rhs.val);
+        return *this;
+    }
+    f61 & operator*= (f61 const & rhs) {
+        val = mult_mod(val, rhs.val);
+        return *this;
+    }
+    f61 & operator*= (f61 && rhs) {
+        val = mult_mod(val, rhs.val);
+        return *this;
+    }
+    f61 operator+(f61 rhs) &  { return rhs += *this; }
+    f61 operator+(f61 rhs) && { return rhs += std::move(*this); }
+    f61 operator*(f61 rhs) &  { return rhs *= *this; }
+    f61 operator*(f61 rhs) && { return rhs *= std::move(*this); }    
 };
 
 enum OPTYPE {
@@ -168,7 +224,7 @@ public:
         }
         // set up initial values on C's output wire: left (1), right (reg[m-1]-bid)
         constant += coeff; coeff *= chi;
-        constant += T(-bid) * coeff; wire[m-1] += coeff; coeff *= chi;
+        constant += T::minor(bid) * coeff; wire[m-1] += coeff; coeff *= chi;
         // set up inital values on ``special'' 1*1=1 tuple
         constant += coeff; coeff *= chi;
         constant += coeff; coeff *= chi;
@@ -364,6 +420,116 @@ public:
         
         std::cout << sum_l.val-sum_r.val << std::endl;
     }
+
+    uint64_t gen_rand_f61(PRG &prg_s) {
+        block tmp;
+        prg_s.random_block(&tmp, 1);
+        return LOW64(tmp);
+    }
+
+    void test_proof_f61(std::size_t step) {
+        std::vector<f61> reg[2];
+        block s_seed; 
+        PRG().random_block(&s_seed, 1);
+        PRG prg_s(&s_seed); 
+
+        std::size_t now = 0; // rotate        
+        for (int i = 0; i < m; i++) reg[now].push_back(f61());        
+
+        std::vector<f61> in;
+        std::vector<f61> l, r, o;
+        std::vector<std::size_t> cids;
+        
+        for (int i = 0; i < step; i++, now = 1 - now) {
+            std::size_t cid = reg[now][m-1].val;
+            cids.push_back(cid);
+            std::size_t n = br[cid].n;
+            for (int j = 0; j < n+m+1; j++) {
+                f61 x(gen_rand_f61(prg_s) % PR);
+                reg[now].push_back(x);
+                in.push_back(x);
+            }
+            f61 next_cid(gen_rand_f61(prg_s) % B);
+            reg[now].push_back(next_cid);
+            in.push_back(next_cid);
+
+            // spec output
+            // std::cout << i << ":" << std::endl;
+            // for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;
+            
+            // execute
+            std::vector<f61> lwire, rwire;
+            br[cid].EvalWithExtWit<f61>(reg[now], reg[1-now], lwire, rwire);
+
+            // setup l,r,o
+            // the fisrt 1*1=1
+            l.push_back(f61(1)); r.push_back(f61(1)); o.push_back(f61(1));
+            // to capture m reg
+            for (int j = 0; j < m; j++) {
+                l.push_back(f61(1));
+                r.push_back(reg[now][j]);
+                o.push_back(reg[now][j]);
+            }
+            // multi tuples in the middle
+            for (int j = 0; j < lwire.size(); j++) {
+                l.push_back(lwire[j]);
+                r.push_back(rwire[j]);
+                o.push_back(lwire[j] * rwire[j]);
+            }
+            // the last 1*0=0
+            l.push_back(f61(1)); r.push_back(f61(0)); o.push_back(f61(0));
+
+            // p selects the next instruction
+            reg[1-now].push_back(next_cid);
+        }
+
+        //std::cout << in.size() << ' ' << l.size() << ' ' << r.size() << ' ' << o.size() << std::endl;
+
+        // final state
+        // std::cout << "Final:" << std::endl;
+        // for (int j = 0; j < reg[now].size(); j++) std::cout << reg[now][j].val << std::endl;        
+
+        f61 chi(gen_rand_f61(prg_s) % PR);
+        std::vector<f61> topo_vec[B];
+        for (int i = 0; i < B; i++) br[i].comp_topo_vec_pselect<f61>(chi, i, topo_vec[i]);
+
+        f61 sum_l = f61::unit() + chi;        
+        f61 coeff = chi * chi;
+        for (int i = 0; i < m; i++) {
+            sum_l += coeff; coeff *= chi;
+            coeff *= chi;
+        }
+        std::vector<f61> ll; ll.clear();
+        for (int i = 0; i < step; i++) {
+            std::size_t cid = cids[i];
+            f61 tmp_coeff = coeff;
+            for (int j = 0; j < topo_vec[cid].size(); j++) {
+                ll.push_back(topo_vec[cid][j]*coeff);
+                tmp_coeff *= chi;
+            }
+            coeff = tmp_coeff;
+        }
+        for (int i = 0; i < in.size(); i++) {
+            sum_l += ll[i*2] * in[i];
+            sum_l += ll[i*2+1] * o[i];
+        }
+
+        f61 sum_r = f61::zero();
+        coeff = f61::unit();
+        for (int i = 0; i < l.size(); i++) {
+            sum_r += coeff * l[i]; coeff *= chi;
+            sum_r += coeff * r[i]; coeff *= chi;
+        }
+        sum_r += coeff; coeff *= chi;
+        sum_r += coeff; coeff *= chi;
+        for (int i = 0; i < reg[now].size(); i++) {
+            sum_r += coeff; coeff *= chi;
+            sum_r += coeff * reg[now][i]; coeff *= chi;
+        }
+        
+        std::cout << sum_l.val-sum_r.val << std::endl;
+    }
+
 };
 
 #endif
