@@ -525,7 +525,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         }
     }    
 
-    // TODO: prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
+    // prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
     // This is performed by showing () \times (1,0,0,...) + (chi^? \odot (1,1,1,...,chi^?,...) \otimes cv) \times (in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)    
     
     // compute add_l and shift_l
@@ -550,12 +550,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         tmp_chi *= f61_chi2;
     }
 
-    // TODO: switch from brute force to (generalized) inner product optimization    
-    IntFp sum_l(add_l.val, PUBLIC);
-    for (int i = 0; i < path_length; i++) {
-        sum_l = sum_l + s_jump[i] * cv[2*i] * in[i];
-        sum_l = sum_l + s_jump[i] * cv[2*i+1] * o[i];
-    }    
+    // compute sum_r (inner-product on the right hand side)
     IntFp sum_r(0, PUBLIC);
     tmp_chi = f61::unit();
     for (int i = 0; i < path_length; i++) {
@@ -569,9 +564,110 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         sum_r = sum_r + tmp_chi.val; tmp_chi *= f61_chi;
         sum_r = sum_r + (tmp_chi * final_reg[i]).val; tmp_chi *= f61_chi;
     }
+    sum_r = sum_r + (PR - add_l.val);
+    sum_r = sum_r.negate();
+
+    // history   
+    // IntFp sum_l(0, PUBLIC);
+    // for (int i = 0; i < path_length; i++) {
+    //     sum_l = sum_l + s_jump[i] * cv[2*i] * in[i];
+    //     sum_l = sum_l + s_jump[i] * cv[2*i+1] * o[i];
+    // }            
+    // IntFp iszero = sum_l + sum_r;
+    // batch_reveal_check_zero(&iszero, 1);
+    // (generalized) inner product optimization 
+    if (party == ALICE) {
+        f61 C0 = f61::zero(), C1 = f61::zero(), C2 = f61::zero();        
+        for (int i = 0; i < path_length; i++) {
+            // obtain high low
+            f61 h64_sjump_i = f61(HIGH64(s_jump[i].value)), l64_sjump_i = f61(LOW64(s_jump[i].value));
+            f61 h64_cv_first = f61(HIGH64(cv[2*i].value)), l64_cv_first = f61(LOW64(cv[2*i].value));
+            f61 h64_cv_second = f61(HIGH64(cv[2*i+1].value)), l64_cv_second = f61(LOW64(cv[2*i+1].value));
+            f61 h64_in_i = f61(HIGH64(in[i].value)), l64_in_i = f61(LOW64(in[i].value));
+            f61 h64_o_i = f61(HIGH64(o[i].value)), l64_o_i = f61(LOW64(o[i].value));
+            // add s_jump[i] * cv_first * in[i]
+            C0 += l64_sjump_i * l64_cv_first * l64_in_i;
+            C1 += h64_sjump_i * l64_cv_first * l64_in_i + h64_cv_first * l64_sjump_i * l64_in_i + h64_in_i * l64_sjump_i * l64_cv_first;
+            C2 += l64_sjump_i * h64_cv_first * h64_in_i + l64_cv_first * h64_sjump_i * h64_in_i + l64_in_i * h64_sjump_i * h64_cv_first;            
+            // add s_jump[i] * cv_second * o[i]
+            C0 += l64_sjump_i * l64_cv_second * l64_o_i;
+            C1 += h64_sjump_i * l64_cv_second * l64_o_i + h64_cv_second * l64_sjump_i * l64_o_i + h64_o_i * l64_sjump_i * l64_cv_second;
+            C2 += l64_sjump_i * h64_cv_second * h64_o_i + l64_cv_second * h64_sjump_i * h64_o_i + l64_o_i * h64_sjump_i * h64_cv_second;
+        }
+        C1 = f61::minor( C1.val );
+        C2 += f61(LOW64(sum_r.value));
+
+        // mask the proofs with random_mask
+        size_t block_size = 3;
+        uint64_t random_pad[block_size]; memset(random_pad, 0, sizeof(random_pad));
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        // -P.HIGH64 \Delta + P.LOW64 = V.LOW64
+        random_pad[0] = LOW64(random_mask);
+        random_pad[1] = PR - HIGH64(random_mask);
+        uint64_t tmp[block_size+1]; 
+        for (int i = 1; i < block_size-1; i++) {
+            random_mask = ZKFpExec::zk_exec->get_one_role();                
+            tmp[0] = 0;
+            uint64_t x = PR - HIGH64(random_mask), M = LOW64(random_mask);
+            for (int j = 0; j <= i; j++) tmp[j+1] = mult_mod(x, random_pad[j]);
+            for (int j = 0; j <= i; j++) random_pad[j] = add_mod(tmp[j], mult_mod(M, random_pad[j])); 
+            random_pad[i+1] = tmp[i+1];  
+            random_mask = ZKFpExec::zk_exec->get_one_role();
+            random_pad[0] = add_mod(random_pad[0], LOW64(random_mask));
+            random_pad[1] = add_mod(random_pad[1], PR - HIGH64(random_mask));
+        }
+        C0 += f61(random_pad[0]);
+        C1 += f61(random_pad[1]);
+        C2 += f61(random_pad[2]);
+
+        ZKFpExec::zk_exec->send_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->send_data(&C1, sizeof(f61));        
+        ZKFpExec::zk_exec->send_data(&C2, sizeof(f61));    
+    } else {        
+        f61 exp_proof = f61::zero();
+        for (int i = 0; i < path_length; i++) {
+            // obtain high low
+            f61 l64_sjump_i = f61(LOW64(s_jump[i].value));
+            f61 l64_cv_first = f61(LOW64(cv[2*i].value));
+            f61 l64_cv_second = f61(LOW64(cv[2*i+1].value));
+            f61 l64_in_i = f61(LOW64(in[i].value));
+            f61 l64_o_i = f61(LOW64(o[i].value));
+            // add s_jump[i] * cv_first * in[i]
+            exp_proof += l64_sjump_i * l64_cv_first * l64_in_i;
+            // add s_jump[i] * cv_second * o[i]
+            exp_proof += l64_sjump_i * l64_cv_second * l64_o_i;
+        }
+        exp_proof += f61(LOW64(sum_r.value)) * f61_delta * f61_delta;
+
+        // mask the proofs with random_mask
+        size_t block_size = 3;
+        uint64_t random_pad;
+         __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        // V.LOW64
+        random_pad = LOW64(random_mask); 
+        for (int i = 1; i < block_size-1; i++) {
+            random_mask = ZKFpExec::zk_exec->get_one_role();
+            random_pad = mult_mod(random_pad, LOW64(random_mask));
+            random_mask = ZKFpExec::zk_exec->get_one_role();
+            random_pad = add_mod(random_pad, LOW64(random_mask));
+        }
+        exp_proof += f61(random_pad);
+
+        f61 C0, C1, C2;
+        ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
+        ZKFpExec::zk_exec->recv_data(&C2, sizeof(f61));  
+
+        // std::cout << (f61_delta*f61_delta*C2 + f61_delta*C1 + C0).val << std::endl;
+        // std::cout << exp_proof.val << std::endl;
+        if ((f61_delta*f61_delta*C2 + f61_delta*C1 + C0).val == exp_proof.val) std::cout << "[Check]: the entire circuit is satisfied" << std::endl;
+        else {
+            std::cout << "[Cheat]: the entire circuit is not satisfied" << std::endl;
+            exit(-1);
+        }
+    }    
+
     
-    IntFp iszero = sum_l + sum_r.negate();
-    batch_reveal_check_zero(&iszero, 1);
 
 	// batch_reveal_check_zero(&tmp[0], tmp.size());
 
