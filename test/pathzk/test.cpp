@@ -222,7 +222,65 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 
     // TOOD: ZKUROM (tail-heavy)
 
-    // TODO: prove, for all even positions, (1-cv) \otimes p = \vec{0}; I.e., tail heavy
+    // prove, for all odd positions, (cv-1) \otimes p = \vec{0}; I.e., tail heavy
+    if (party == ALICE) {
+		uint64_t chal; // random challenge
+		ZKFpExec::zk_exec->recv_data(&chal, sizeof(uint64_t));
+        chal = chal % PR;
+
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 C0 = f61::zero(), C1 = f61::zero();
+        
+        for (int i = 0; i < path_length; i++) {
+            IntFp cvm1 = cv[2*i+1] + (PR - 1);
+            f61 f61_p = f61(LOW64(p[i].value));
+            f61 f61_cvm1 = f61(LOW64(cvm1.value));
+            C0 += coeff * f61_p * f61_cvm1;
+            C1 += coeff * f61_p * f61(HIGH64(cvm1.value)) + coeff * f61_cvm1 * f61(HIGH64(p[i].value));
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        C1 += f61(HIGH64(random_mask));
+        C1 = f61::minor(C1.val);
+        C0 += f61(LOW64(random_mask));
+
+        ZKFpExec::zk_exec->send_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->send_data(&C1, sizeof(f61));        
+    } else {
+		uint64_t chal; // random challenge
+		PRG().random_data(&chal, sizeof(uint64_t));
+		chal = chal % PR;
+		ZKFpExec::zk_exec->send_data(&chal, sizeof(uint64_t));	
+        
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 acc = f61::zero();
+
+        for (int i = 0; i < path_length; i++) {
+            IntFp cvm1 = cv[2*i+1] + (PR - 1);
+            acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(cvm1.value));
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        acc += f61(LOW64(random_mask));
+        
+        f61 C0, C1;
+        ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
+
+        // std::cout << (f61(delta)*C1 + C0).val << std::endl;
+        // std::cout << acc.val << std::endl;
+        if ((f61(delta)*C1 + C0).val == acc.val) std::cout << "[Check]: each fragment ends with 0" << std::endl;
+        else {
+            std::cout << "[Cheat]: some fragment ends with non-zero" << std::endl;
+            exit(-1);
+        }
+    }        
 
     // TODO: prove P loads correct cv
     // V issues uniform \gamma to compress vectors to tokens (macs)   
@@ -277,7 +335,63 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         batch_reveal_check_zero(&diff, 1);
     }
 
-    // TODO: prove o \otimes p = \vec{0}    
+    // prove o \otimes p = \vec{0}, i.e., every instruction's checking output is 0 
+    if (party == ALICE) {
+		uint64_t chal; // random challenge
+		ZKFpExec::zk_exec->recv_data(&chal, sizeof(uint64_t));
+        chal = chal % PR;
+
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 C0 = f61::zero(), C1 = f61::zero();
+        
+        for (int i = 0; i < path_length; i++) {
+            f61 f61_p = f61(LOW64(p[i].value));
+            f61 f61_o = f61(LOW64(o[i].value));
+            C0 += coeff * f61_p * f61_o;
+            C1 += coeff * f61_p * f61(HIGH64(o[i].value)) + coeff * f61_o * f61(HIGH64(p[i].value));
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        C1 += f61(HIGH64(random_mask));
+        C1 = f61::minor(C1.val);
+        C0 += f61(LOW64(random_mask));
+
+        ZKFpExec::zk_exec->send_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->send_data(&C1, sizeof(f61));        
+    } else {
+		uint64_t chal; // random challenge
+		PRG().random_data(&chal, sizeof(uint64_t));
+		chal = chal % PR;
+		ZKFpExec::zk_exec->send_data(&chal, sizeof(uint64_t));	
+        
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 acc = f61::zero();
+
+        for (int i = 0; i < path_length; i++) {
+            acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(o[i].value));
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        acc += f61(LOW64(random_mask));
+        
+        f61 C0, C1;
+        ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
+
+        // std::cout << (f61(delta)*C1 + C0).val << std::endl;
+        // std::cout << acc.val << std::endl;
+        if ((f61(delta)*C1 + C0).val == acc.val) std::cout << "[Check]: each instruction checking's output is 0" << std::endl;
+        else {
+            std::cout << "[Cheat]: some instruction checking's output is non-zero" << std::endl;
+            exit(-1);
+        }
+    }    
 
     // TODO: prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
     // This is performed by showing () \times (1,0,0,...) + (chi^? \odot (1,1,1,...,chi^?,...) \otimes cv) \times (in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)    
