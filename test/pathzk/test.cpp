@@ -89,6 +89,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 	// Unit for constant offsets
 	// IntFp one = IntFp(1, PUBLIC);
 	uint64_t delta = ZKFpExec::zk_exec->get_delta();    
+    f61 f61_delta(delta);
 	
 	auto start = clock_start();
 
@@ -211,16 +212,16 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
         ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
 
-        // std::cout << (f61(delta)*C1 + C0).val << std::endl;
+        // std::cout << (f61_delta*C1 + C0).val << std::endl;
         // std::cout << acc.val << std::endl;
-        if ((f61(delta)*C1 + C0).val == acc.val) std::cout << "[Check]: p is a 0-1 program" << std::endl;
+        if ((f61_delta*C1 + C0).val == acc.val) std::cout << "[Check]: p is a 0-1 program" << std::endl;
         else {
             std::cout << "[Cheat]: p is not a 0-1 program" << std::endl;
             exit(-1);
         }
     }
 
-    // TOOD: ZKUROM (tail-heavy)
+    // ZKUROM (tail-heavy)
 
     // prove, for all odd positions, (cv-1) \otimes p = \vec{0}; I.e., tail heavy
     if (party == ALICE) {
@@ -273,16 +274,15 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
         ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
 
-        // std::cout << (f61(delta)*C1 + C0).val << std::endl;
+        // std::cout << (f61_delta*C1 + C0).val << std::endl;
         // std::cout << acc.val << std::endl;
-        if ((f61(delta)*C1 + C0).val == acc.val) std::cout << "[Check]: each fragment ends with 0" << std::endl;
+        if ((f61_delta*C1 + C0).val == acc.val) std::cout << "[Check]: each fragment ends with 0" << std::endl;
         else {
             std::cout << "[Cheat]: some fragment ends with non-zero" << std::endl;
             exit(-1);
         }
     }        
 
-    // TODO: prove P loads correct cv
     // V issues uniform \gamma to compress vectors to tokens (macs)   
     uint64_t gamma;
     if (party == ALICE) {
@@ -314,7 +314,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     macrom.Teardown_Batch_Public(party, 16);
     std::cout << "[Check]: zkrom is performed correctly" << std::endl;
 
-    // TODO: prove zkurom is formed correctly
+    // prove zkurom is formed correctly
     // linear scan to generate (1,gamma,...,gamma^?,1,...,gamma^?,1...)
     std::vector<IntFp> s_cont(path_length);
     IntFp cur = IntFp(1, PUBLIC);
@@ -325,15 +325,147 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         IntFp next_cur = p[i] + (p[i].negate() + 1) * cur * f61_gamma2.val;
         cur = next_cur;
     }
-    IntFp acc_load_mac = IntFp(0, PUBLIC);
-    IntFp acc_calc_mac = IntFp(0, PUBLIC);
-    // TODO: switch to more effient version
-    for (int i = 0; i < path_length; i++) {
-        acc_load_mac = acc_load_mac + mac[i] * p[i];
-        acc_calc_mac = acc_calc_mac + cv[2*i] * s_cont[i] + cv[2*i+1] * s_cont[i] * gamma;
-        IntFp diff = p[i] * (acc_load_mac + acc_calc_mac.negate());
-        batch_reveal_check_zero(&diff, 1);
-    }
+
+    // history: brute force
+    // IntFp acc_load_mac = IntFp(0, PUBLIC);
+    // IntFp acc_calc_mac = IntFp(0, PUBLIC);    
+    // for (int i = 0; i < path_length; i++) {
+    //     acc_load_mac = acc_load_mac + mac[i] * p[i];
+    //     acc_calc_mac = acc_calc_mac + cv[2*i] * s_cont[i] + cv[2*i+1] * s_cont[i] * gamma;
+    //     IntFp diff = p[i] * (acc_load_mac + acc_calc_mac.negate());
+    //     batch_reveal_check_zero(&diff, 1);
+    // }    
+
+    // switch to more effient version
+    if (party == ALICE) {
+		uint64_t chal; // random challenge
+		ZKFpExec::zk_exec->recv_data(&chal, sizeof(uint64_t));
+        chal = chal % PR;
+
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 C0 = f61::zero(), C1 = f61::zero(), C2 = f61::zero();
+        f61 A0 = f61::zero(), A1 = f61::zero(), A2 = f61::zero();
+        
+        for (int i = 0; i < path_length; i++) {
+            // obtain high low
+            f61 h64_mac_i = f61(HIGH64(mac[i].value)), l64_mac_i = f61(LOW64(mac[i].value));
+            f61 h64_p_i = f61(HIGH64(p[i].value)), l64_p_i = f61(LOW64(p[i].value));
+            f61 h64_scont_i = f61(HIGH64(s_cont[i].value)), l64_scont_i = f61(LOW64(s_cont[i].value));
+            f61 h64_cv_first = f61(HIGH64(cv[2*i].value)), l64_cv_first = f61(LOW64(cv[2*i].value));
+            f61 h64_cv_second = f61(HIGH64(cv[2*i+1].value)), l64_cv_second = f61(LOW64(cv[2*i+1].value));
+            // subtract mac[i] * p[i]
+            A0 += f61::minor( (l64_mac_i * l64_p_i).val );
+            A1 += f61::minor( (l64_mac_i * h64_p_i + l64_p_i * h64_mac_i).val );
+            A2 += f61::minor( (h64_mac_i * h64_p_i).val );
+            // add cv[2*i] * s_cont[i]
+            A0 += l64_cv_first * l64_scont_i;
+            A1 += l64_cv_first * h64_scont_i + l64_scont_i * h64_cv_first;
+            A2 += h64_cv_first * h64_scont_i;
+            // add cv[2*i+1] * s_cont[i] * gamma
+            A0 += l64_cv_second * l64_scont_i * f61_gamma;
+            A1 += l64_cv_second * h64_scont_i * f61_gamma + l64_scont_i * h64_cv_second * f61_gamma;
+            A2 += h64_cv_second * h64_scont_i * f61_gamma;
+
+            // case on p[i] = 0 or p[i] = 1
+            if (h64_p_i.val == 0) { // case 0
+                f61 shift = coeff * l64_p_i;
+                C2 += shift * A2;
+                C1 += shift * f61::minor( A1.val );
+                C0 += shift * A0;
+            } else { // case 1
+                f61 mcoeff = f61::minor( coeff.val );
+                C2 += coeff * A1;
+                C1 += mcoeff * (A1 * l64_p_i + A0);
+                C0 += coeff * A0 * l64_p_i;                
+            }
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        size_t block_size = 3;
+        uint64_t random_pad[block_size]; memset(random_pad, 0, sizeof(random_pad));
+        __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        // -P.HIGH64 \Delta + P.LOW64 = V.LOW64
+        random_pad[0] = LOW64(random_mask);
+        random_pad[1] = PR - HIGH64(random_mask);
+        uint64_t tmp[block_size+1]; 
+        for (int i = 1; i < block_size-1; i++) {
+            random_mask = ZKFpExec::zk_exec->get_one_role();                
+            tmp[0] = 0;
+            uint64_t x = PR - HIGH64(random_mask), M = LOW64(random_mask);
+            for (int j = 0; j <= i; j++) tmp[j+1] = mult_mod(x, random_pad[j]);
+            for (int j = 0; j <= i; j++) random_pad[j] = add_mod(tmp[j], mult_mod(M, random_pad[j])); 
+            random_pad[i+1] = tmp[i+1];  
+            random_mask = ZKFpExec::zk_exec->get_one_role();
+            random_pad[0] = add_mod(random_pad[0], LOW64(random_mask));
+            random_pad[1] = add_mod(random_pad[1], PR - HIGH64(random_mask));
+        }
+        C0 += f61(random_pad[0]);
+        C1 += f61(random_pad[1]);
+        C2 += f61(random_pad[2]);
+
+        ZKFpExec::zk_exec->send_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->send_data(&C1, sizeof(f61));        
+        ZKFpExec::zk_exec->send_data(&C2, sizeof(f61));    
+    } else {
+		uint64_t chal; // random challenge
+		PRG().random_data(&chal, sizeof(uint64_t));
+		chal = chal % PR;
+		ZKFpExec::zk_exec->send_data(&chal, sizeof(uint64_t));	
+        
+        f61 f61_chal(chal);
+        f61 coeff = f61::unit();
+        f61 acc = f61::zero();
+        f61 exp_proof = f61::zero();
+
+        for (int i = 0; i < path_length; i++) {
+            // obtain high low
+            f61 l64_mac_i = f61(LOW64(mac[i].value));
+            f61 l64_p_i = f61(LOW64(p[i].value));
+            f61 l64_scont_i = f61(LOW64(s_cont[i].value));
+            f61 l64_cv_first = f61(LOW64(cv[2*i].value));
+            f61 l64_cv_second = f61(LOW64(cv[2*i+1].value));  
+            // subtract mac[i] * p[i]          
+            acc += f61::minor( (l64_mac_i * l64_p_i).val );
+            // add cv[2*i] * s_cont[i]
+            acc += l64_cv_first * l64_scont_i;
+            // add cv[2*i+1] * s_cont[i] * gamma
+            acc += l64_cv_second * l64_scont_i * gamma;
+            // update the expected proof
+            exp_proof += coeff * acc * l64_p_i;
+            coeff *= f61_chal;
+        }
+
+        // mask the proofs with random_mask
+        size_t block_size = 3;
+        uint64_t random_pad;
+         __uint128_t random_mask = ZKFpExec::zk_exec->get_one_role();
+        // V.LOW64
+        random_pad = LOW64(random_mask); 
+        for (int i = 1; i < block_size-1; i++) {
+            random_mask = ZKFpExec::zk_exec->get_one_role();
+            random_pad = mult_mod(random_pad, LOW64(random_mask));
+            random_mask = ZKFpExec::zk_exec->get_one_role();
+            random_pad = add_mod(random_pad, LOW64(random_mask));
+        }
+        exp_proof += f61(random_pad);
+
+        f61 C0, C1, C2;
+        ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
+        ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
+        ZKFpExec::zk_exec->recv_data(&C2, sizeof(f61));  
+
+        // std::cout << (f61_delta*f61_delta*C2 + f61_delta*C1 + C0).val << std::endl;
+        // std::cout << exp_proof.val << std::endl;
+        if ((f61_delta*f61_delta*C2 + f61_delta*C1 + C0).val == exp_proof.val) std::cout << "[Check]: each fragment is from zkurom" << std::endl;
+        else {
+            std::cout << "[Cheat]: some fragment is wrong" << std::endl;
+            exit(-1);
+        }
+    }    
+
+
 
     // prove o \otimes p = \vec{0}, i.e., every instruction's checking output is 0 
     if (party == ALICE) {
@@ -384,9 +516,9 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         ZKFpExec::zk_exec->recv_data(&C0, sizeof(f61));
         ZKFpExec::zk_exec->recv_data(&C1, sizeof(f61));  
 
-        // std::cout << (f61(delta)*C1 + C0).val << std::endl;
+        // std::cout << (f61_delta*C1 + C0).val << std::endl;
         // std::cout << acc.val << std::endl;
-        if ((f61(delta)*C1 + C0).val == acc.val) std::cout << "[Check]: each instruction checking's output is 0" << std::endl;
+        if ((f61_delta*C1 + C0).val == acc.val) std::cout << "[Check]: each instruction checking's output is 0" << std::endl;
         else {
             std::cout << "[Cheat]: some instruction checking's output is non-zero" << std::endl;
             exit(-1);
