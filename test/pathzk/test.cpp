@@ -3,6 +3,7 @@
 #include "emp-zk/emp-zk.h"
 #include <iostream>
 #include "emp-tool/emp-tool.h"
+#include "zk-ram/zk-ram.h"
 #if defined(__linux__)
 	#include <sys/time.h>
 	#include <sys/resource.h>
@@ -86,7 +87,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     }
 
 	// Unit for constant offsets
-	IntFp one = IntFp(1, PUBLIC);
+	// IntFp one = IntFp(1, PUBLIC);
 	uint64_t delta = ZKFpExec::zk_exec->get_delta();    
 	
 	auto start = clock_start();
@@ -223,6 +224,59 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 
     // TODO: prove, for all even positions, (1-cv) \otimes p = \vec{0}; I.e., tail heavy
 
+    // TODO: prove P loads correct cv
+    // V issues uniform \gamma to compress vectors to tokens (macs)   
+    uint64_t gamma;
+    if (party == ALICE) {
+		ZKFpExec::zk_exec->recv_data(&gamma, sizeof(uint64_t));
+        gamma = gamma % PR; // to prevent cheating V
+    } else {
+		PRG().random_data(&gamma, sizeof(uint64_t));
+		gamma = gamma % PR;
+		ZKFpExec::zk_exec->send_data(&gamma, sizeof(uint64_t));	        
+    }
+    f61 f61_gamma(gamma);
+    f61 f61_gamma2 = f61_gamma * f61_gamma;
+    std::vector<uint64_t> init_mac(branch_size);
+    // compute token
+    for (int i = 0; i < branch_size; i++) {
+        f61 coeff = f61::unit();
+        f61 acc = f61::zero();
+        for (int j = 0; j < topo_vec[i].size(); j++) {
+            acc += coeff * topo_vec[i][j];
+            coeff *= f61_gamma;            
+        }
+        init_mac[i] = acc.val;
+        // cout << "mac " << i << ":" << init_mac[i] << endl;
+    }
+    ZKROM macrom(branch_size);
+    macrom.Public_Setup(init_mac);
+    std::vector<IntFp> mac(path_length);
+    for (int i = 0; i < path_length; i++) mac[i] = macrom.Access(id[i]);
+    macrom.Teardown_Batch_Public(party, 16);
+    std::cout << "[Check]: zkrom is performed correctly" << std::endl;
+
+    // TODO: prove zkurom is formed correctly
+    // linear scan to generate (1,gamma,...,gamma^?,1,...,gamma^?,1...)
+    std::vector<IntFp> s_cont(path_length);
+    IntFp cur = IntFp(1, PUBLIC);
+    for (int i = 0; i < path_length; i++) {
+        // s_jump[2*i] = s_jump[2*i+1] = cur;
+        s_cont[i] = cur;
+        // update the next cur
+        IntFp next_cur = p[i] + (p[i].negate() + 1) * cur * f61_gamma2.val;
+        cur = next_cur;
+    }
+    IntFp acc_load_mac = IntFp(0, PUBLIC);
+    IntFp acc_calc_mac = IntFp(0, PUBLIC);
+    // TODO: switch to more effient version
+    for (int i = 0; i < path_length; i++) {
+        acc_load_mac = acc_load_mac + mac[i] * p[i];
+        acc_calc_mac = acc_calc_mac + cv[2*i] * s_cont[i] + cv[2*i+1] * s_cont[i] * gamma;
+        IntFp diff = p[i] * (acc_load_mac + acc_calc_mac.negate());
+        batch_reveal_check_zero(&diff, 1);
+    }
+
     // TODO: prove o \otimes p = \vec{0}    
 
     // TODO: prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
@@ -239,7 +293,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     // generate shift_l \odot (1,1,1,...,chi^?,...) \otimes cv
     // linear scan to generate (1,1,1,...,chi^?,...)
     std::vector<IntFp> s_jump(path_length);
-    IntFp cur = IntFp(1, PUBLIC);
+    cur = IntFp(1, PUBLIC);
     f61 tmp_chi = f61_chi2;
     for (int i = 0; i < path_length; i++) {
         // s_jump[2*i] = s_jump[2*i+1] = cur;
@@ -337,7 +391,7 @@ int main(int argc, char** argv) {
 	// }
 	
 
-	test_circuit_zk(ios, party, 4, 4, 10);
+	test_circuit_zk(ios, party, 32, 4, 10);
 
 	for(int i = 0; i < threads; ++i) {
 		delete ios[i]->io;
