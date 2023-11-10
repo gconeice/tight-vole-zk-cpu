@@ -57,6 +57,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     ZKCPU zkcpu(branch_size, reg_size, cir_seed);
     zkcpu.rand_cpu();
     //zkcpu.print();
+    zkcpu.print_file("cpu.cfg");
 
     std::cout << "CPU has been randomized." << std::endl;
 
@@ -75,6 +76,21 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         ZKFpExec::zk_exec->recv_data(&path_length, sizeof(size_t));
         final_reg.resize(reg_size);
         for (int i = 0; i < final_reg.size(); i++) ZKFpExec::zk_exec->recv_data(&final_reg[i], sizeof(f61));        
+    }
+    if (party == ALICE) {
+        ofstream fout("input.txt");
+        fout << in_val.size() << endl;
+        cout << in_val.size() << endl;
+        for (int i = 0; i < in_val.size(); i++) fout << in_val[i].val << endl;
+        fout.close(); 
+        fout.open("finalreg.txt");
+        fout << final_reg.size() << endl;
+        for (int i = 0; i < final_reg.size(); i++) fout << final_reg[i].val << endl;
+        fout.close();
+        fout.open("cid.txt");
+        fout << cids.size() << endl;
+        for (int i = 0; i < cids.size(); i++) fout << cids[i] << endl;
+        fout.close();
     }
 
     // proof start sync

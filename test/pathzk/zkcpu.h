@@ -4,6 +4,8 @@
 #include <vector>
 #include <random>
 #include <iostream>
+#include <string>
+#include <fstream>
 
 #include "emp-zk/emp-zk.h"
 #include "emp-tool/emp-tool.h"
@@ -112,6 +114,7 @@ public:
     OPTYPE op;
     std::size_t l,r;
     BaseOp(OPTYPE op, std::size_t l, std::size_t r) : op(op), l(l), r(r) {}
+    BaseOp() {}
 };
 
 class Instruction {
@@ -273,7 +276,9 @@ public:
 
     void rand_cpu() {
         for (int i = 0; i < B; i++) {
-            br.push_back(Instruction(m, 100));
+            // if (!i) br.push_back(Instruction(m, 125));
+            // else br.push_back(Instruction(m, 1));
+            br.push_back(Instruction(m, 125));
             auto last = br.size();
             //br[last - 1].rand_inst(gen);
             br[last - 1].rand_inst_pselect(gen);
@@ -285,6 +290,36 @@ public:
             br[i].print();
             std::cout << "=========" << std::endl;
         }
+    }
+
+    void print_file(std::string file_name) {
+        std::ofstream fout(file_name);
+        fout << B << ' ' << m << std::endl;
+        for (int i = 0; i < B; i++) {
+            fout << br[i].bank.size() << std::endl;
+            for (int j = 0; j < br[i].bank.size(); j++) {
+                fout << br[i].bank[j].op << ' ' << br[i].bank[j].l << ' ' << br[i].bank[j].r << std::endl;
+            }
+        }
+        fout.close();
+    }
+
+    void load_cpu_from_file(std::string file_name) {
+        std::ifstream fin(file_name);
+        fin >> B >> m;
+        br.clear();
+        for (int i = 0; i < B; i++) {
+            br.push_back(Instruction(m, 0));
+            int bank_size; fin >> bank_size;
+            for (int j = 0; j < bank_size; j++) {
+                BaseOp tmp; int a; fin >> a >> tmp.l >> tmp.r;
+                if (a == 0) tmp.op = OPTYPE::INPUT;
+                else if (a == 1) tmp.op = OPTYPE::ADD;
+                else tmp.op = OPTYPE::MUL;
+                br[i].bank.push_back(tmp);
+            }
+        }
+        fin.close();
     }
 
     void test_eval_f5() {
