@@ -285,6 +285,28 @@ public:
         }
     }
 
+    void rand_balanced_batchman_cpu(size_t cirsize) {
+        for (int i = 0; i < B; i++) {
+            // if (!i) br.push_back(Instruction(m, 125));
+            // else br.push_back(Instruction(m, 1));
+            br.push_back(Instruction(m, cirsize));
+            auto last = br.size();
+            //br[last - 1].rand_inst(gen);
+            br[last - 1].rand_inst_pselect(gen);
+        }
+    }    
+
+    void rand_unbalanced_batchman_cpu(size_t cirsize) {
+        for (int i = 0; i < B; i++) {
+            if (!i) br.push_back(Instruction(m, cirsize));
+            else br.push_back(Instruction(m, 5));
+            //br.push_back(Instruction(m, 125));
+            auto last = br.size();
+            //br[last - 1].rand_inst(gen);
+            br[last - 1].rand_inst_pselect(gen);
+        }
+    }        
+
     void print() {
         for (int i = 0; i < B; i++) {
             br[i].print();
