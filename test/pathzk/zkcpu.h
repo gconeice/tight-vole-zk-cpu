@@ -270,7 +270,7 @@ public:
     std::mt19937 gen;
     std::vector<Instruction> br;
     
-    ZKCPU(std::size_t B, std::size_t m, std::__1::random_device::result_type seed) : B(B), m(m) {
+    ZKCPU(std::size_t B, std::size_t m, std::random_device::result_type seed) : B(B), m(m) {
         gen = std::mt19937(seed);
     }
 

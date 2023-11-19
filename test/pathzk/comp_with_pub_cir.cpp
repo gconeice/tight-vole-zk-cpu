@@ -45,13 +45,13 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 
 
     // set up randomized CPU (with circuits as instructions)
-    std::__1::random_device::result_type cir_seed;
+    std::random_device::result_type cir_seed;
     if (party == ALICE) {
         std::random_device rd; // obtain a random number from hardware
         cir_seed = rd();
-        ZKFpExec::zk_exec->send_data(&cir_seed, sizeof(std::__1::random_device::result_type));
+        ZKFpExec::zk_exec->send_data(&cir_seed, sizeof(std::random_device::result_type));
     } else {
-        ZKFpExec::zk_exec->recv_data(&cir_seed, sizeof(std::__1::random_device::result_type));
+        ZKFpExec::zk_exec->recv_data(&cir_seed, sizeof(std::random_device::result_type));
     }
 
     ZKCPU zkcpu(branch_size, reg_size, cir_seed);
