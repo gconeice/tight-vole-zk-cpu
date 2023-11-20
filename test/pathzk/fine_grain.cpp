@@ -43,6 +43,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     setup_zk_arith<BoolIO<NetIO>>(ios, threads, party);
     auto init_time = time_from(init_start);
 
+    IntFp xxxxx(1, ALICE);
 
     // set up randomized CPU (with circuits as instructions)
     std::random_device::result_type cir_seed;
@@ -564,6 +565,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     // prove (1,chi,\ldots) \times M \times (in,o,in,o,\ldots) = (1,chi,\ldots) \times (l,r,l,r,\ldots)
     // This is performed by showing () \times (1,0,0,...) + (chi^? \odot (1,1,1,...,chi^?,...) \otimes cv) \times (in,o,in,o,...) = (1,chi,chi^2,...) \times (l,r,l,r,...,1,1,1,reg[0],1,reg[1],...)    
     
+    auto start12 = clock_start();
     // compute add_l and shift_l
     f61 add_l = f61::unit() + f61_chi;
     f61 shift_l = f61_chi2;
@@ -702,6 +704,8 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
             exit(-1);
         }
     }    
+    auto end12 = time_from(start12);	
+	cout << "Time for checking inner-product: " << end12 << " us\t" << party << " " << endl;          
 
     
 
