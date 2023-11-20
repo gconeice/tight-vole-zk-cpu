@@ -23,3 +23,4 @@ add_test_case_with_run(pathzk pub_cir)
 
 add_test_case_with_run(pathzk comp_batchman_balance)
 add_test_case_with_run(pathzk comp_batchman_unbalance)
+add_test_case_with_run(pathzk comp_batchman_balance_opt)
