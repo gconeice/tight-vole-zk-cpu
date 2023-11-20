@@ -749,7 +749,7 @@ int main(int argc, char** argv) {
 	// }
 	
 
-	test_circuit_zk(ios, party, 50, 50, 500000);
+	test_circuit_zk(ios, party, 50, 50, 50000);
 
 	for(int i = 0; i < threads; ++i) {
 		delete ios[i]->io;
