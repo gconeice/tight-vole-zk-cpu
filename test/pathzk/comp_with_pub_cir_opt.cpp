@@ -32,6 +32,11 @@ uint64_t comm2(BoolIO<NetIO> *ios[threads]) {
 	return c;
 }
 
+int64_t comp_gcd(int64_t x, int64_t y) {
+    if (y == 0) return x;
+    return comp_gcd(y, x%y);
+}
+
 void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size, size_t reg_size, size_t step) {
 
     // testing communication
@@ -55,11 +60,19 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     }
 
     ZKCPU zkcpu(branch_size, reg_size, cir_seed);
-    zkcpu.rand_uniform_cpu(10);
+    //zkcpu.rand_uniform_cpu(10);
+    zkcpu.rand_balanced_batchman_cpu(10);
     //zkcpu.print();
     zkcpu.print_file("cpu.cfg");
 
     std::cout << "CPU has been randomized." << std::endl;
+
+// optimization begin
+    int64_t com_gcd = zkcpu.br[0].n + zkcpu.br[0].m + 2;
+    for (int i = 1; i < branch_size; i++) com_gcd = comp_gcd(com_gcd, zkcpu.br[i].n + zkcpu.br[i].m + 2);
+    std::cout << "opt_fact = " << com_gcd << std::endl;
+// optimization end
+    
 
     // prover selects random witness
     std::vector<f61> l_val; std::vector<f61> r_val;
@@ -121,14 +134,18 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     for (int i = 0; i < path_length; i++) r[i] = IntFp(party == ALICE ? r_val[i].val : 0, ALICE);
     for (int i = 0; i < path_length; i++) o[i] = l[i] * r[i];
 
+// optimization begin
+    size_t opt_length = path_length / com_gcd;
+// optimization end
+
     // P:Alice commits 0-1 program p and index indicator id
-    std::vector<IntFp> p(path_length);
-    std::vector<IntFp> id(path_length);
+    std::vector<IntFp> p(opt_length);
+    std::vector<IntFp> id(opt_length);
     if (party == ALICE) {
         size_t scan_i = 0;
         for (int i = 0; i < cids.size(); i++) {
             uint64_t cid = cids[i];
-            size_t sub_path_length = zkcpu.br[cid].m + zkcpu.br[cid].n + 1;
+            size_t sub_path_length = (zkcpu.br[cid].m + zkcpu.br[cid].n + 2) / com_gcd - 1;
             while (sub_path_length--) {
                 p[scan_i] = IntFp(0, ALICE);
                 id[scan_i++] = IntFp(cid, ALICE);
@@ -138,7 +155,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         }
 
     } else {
-        for (int i = 0; i < path_length; i++) {
+        for (int i = 0; i < opt_length; i++) {
             p[i] = IntFp(0, ALICE);
             id[i] = IntFp(0, ALICE);
         }
@@ -172,7 +189,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     }
 
     // prove p \times (1-p) = \vec{0} && last{p} = 1; I.e., p is a 0-1 program
-    IntFp notlastp = p[path_length-1].negate() + 1;
+    IntFp notlastp = p[opt_length-1].negate() + 1;
     batch_reveal_check_zero(&notlastp, 1);
     if (party == ALICE) {
 		uint64_t chal; // random challenge
@@ -183,7 +200,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 coeff = f61::unit();
         f61 C0 = f61::zero(), C1 = f61::zero();
         
-        for (int i = 0; i < path_length; i++) {
+        for (int i = 0; i < opt_length; i++) {
             IntFp notp = p[i].negate() + 1;
             f61 f61_p = f61(LOW64(p[i].value));
             f61 f61_notp = f61(LOW64(notp.value));
@@ -215,7 +232,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 coeff = f61::unit();
         f61 acc = f61::zero();
 
-        for (int i = 0; i < path_length; i++) {
+        for (int i = 0; i < opt_length; i++) {
             IntFp notp = p[i].negate() + 1;
             acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(notp.value));
             coeff *= f61_chal;
@@ -250,8 +267,8 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 coeff = f61::unit();
         f61 C0 = f61::zero(), C1 = f61::zero();
         
-        for (int i = 0; i < path_length; i++) {
-            IntFp cvm1 = cv[2*i+1] + (PR - 1);
+        for (int i = 0; i < opt_length; i++) {
+            IntFp cvm1 = cv[2*i*com_gcd+2*com_gcd-1] + (PR - 1);
             f61 f61_p = f61(LOW64(p[i].value));
             f61 f61_cvm1 = f61(LOW64(cvm1.value));
             C0 += coeff * f61_p * f61_cvm1;
@@ -277,8 +294,8 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 coeff = f61::unit();
         f61 acc = f61::zero();
 
-        for (int i = 0; i < path_length; i++) {
-            IntFp cvm1 = cv[2*i+1] + (PR - 1);
+        for (int i = 0; i < opt_length; i++) {
+            IntFp cvm1 = cv[2*i*com_gcd+2*com_gcd-1] + (PR - 1);
             acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(cvm1.value));
             coeff *= f61_chal;
         }
@@ -326,20 +343,26 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     }
     ZKROM macrom(branch_size);
     macrom.Public_Setup(init_mac);
-    std::vector<IntFp> mac(path_length);
-    for (int i = 0; i < path_length; i++) mac[i] = macrom.Access(id[i]);
+    std::vector<IntFp> mac(opt_length);
+    for (int i = 0; i < opt_length; i++) mac[i] = macrom.Access(id[i]);
     macrom.Teardown_Batch_Public(party, 16);
     std::cout << "[Check]: zkrom is performed correctly" << std::endl;
 
     // prove zkurom is formed correctly
     // linear scan to generate (1,gamma,...,gamma^?,1,...,gamma^?,1...)
-    std::vector<IntFp> s_cont(path_length);
+    f61 f61_gamma2gcd(1);
+    std::vector<f61> f61_gamma_vec(com_gcd+1); f61_gamma_vec[0] = f61_gamma2gcd;
+    for (int i = 0; i < com_gcd; i++) {
+        f61_gamma2gcd = f61_gamma2gcd * f61_gamma2;
+        f61_gamma_vec[i+1] = f61_gamma2gcd;
+    }
+    std::vector<IntFp> s_cont(opt_length);
     IntFp cur = IntFp(1, PUBLIC);
-    for (int i = 0; i < path_length; i++) {
+    for (int i = 0; i < opt_length; i++) {
         // s_jump[2*i] = s_jump[2*i+1] = cur;
         s_cont[i] = cur;
         // update the next cur
-        IntFp next_cur = p[i] + (p[i].negate() + 1) * cur * f61_gamma2.val;
+        IntFp next_cur = p[i] + (p[i].negate() + 1) * cur * f61_gamma2gcd.val;
         cur = next_cur;
     }
 
@@ -364,26 +387,27 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 C0 = f61::zero(), C1 = f61::zero(), C2 = f61::zero();
         f61 A0 = f61::zero(), A1 = f61::zero(), A2 = f61::zero();
         
-        for (int i = 0; i < path_length; i++) {
-            // obtain high low
+        for (int i = 0; i < opt_length; i++) {
             f61 h64_mac_i = f61(HIGH64(mac[i].value)), l64_mac_i = f61(LOW64(mac[i].value));
             f61 h64_p_i = f61(HIGH64(p[i].value)), l64_p_i = f61(LOW64(p[i].value));
-            f61 h64_scont_i = f61(HIGH64(s_cont[i].value)), l64_scont_i = f61(LOW64(s_cont[i].value));
-            f61 h64_cv_first = f61(HIGH64(cv[2*i].value)), l64_cv_first = f61(LOW64(cv[2*i].value));
-            f61 h64_cv_second = f61(HIGH64(cv[2*i+1].value)), l64_cv_second = f61(LOW64(cv[2*i+1].value));
             // subtract mac[i] * p[i]
             A0 += f61::minor( (l64_mac_i * l64_p_i).val );
             A1 += f61::minor( (l64_mac_i * h64_p_i + l64_p_i * h64_mac_i).val );
             A2 += f61::minor( (h64_mac_i * h64_p_i).val );
-            // add cv[2*i] * s_cont[i]
-            A0 += l64_cv_first * l64_scont_i;
-            A1 += l64_cv_first * h64_scont_i + l64_scont_i * h64_cv_first;
-            A2 += h64_cv_first * h64_scont_i;
-            // add cv[2*i+1] * s_cont[i] * gamma
-            A0 += l64_cv_second * l64_scont_i * f61_gamma;
-            A1 += l64_cv_second * h64_scont_i * f61_gamma + l64_scont_i * h64_cv_second * f61_gamma;
-            A2 += h64_cv_second * h64_scont_i * f61_gamma;
-
+            for (int j = 0; j < com_gcd; j++) {
+                // obtain high low
+                f61 h64_scont_i = f61(HIGH64(s_cont[i].value)) * f61_gamma_vec[j], l64_scont_i = f61(LOW64(s_cont[i].value)) * f61_gamma_vec[j];
+                f61 h64_cv_first = f61(HIGH64(cv[2*i*com_gcd+2*j].value)), l64_cv_first = f61(LOW64(cv[2*i*com_gcd+2*j].value));
+                f61 h64_cv_second = f61(HIGH64(cv[2*i*com_gcd+2*j+1].value)), l64_cv_second = f61(LOW64(cv[2*i*com_gcd+2*j+1].value));
+                // add cv[2*i] * s_cont[i]
+                A0 += l64_cv_first * l64_scont_i;
+                A1 += l64_cv_first * h64_scont_i + l64_scont_i * h64_cv_first;
+                A2 += h64_cv_first * h64_scont_i;
+                // add cv[2*i+1] * s_cont[i] * gamma
+                A0 += l64_cv_second * l64_scont_i * f61_gamma;
+                A1 += l64_cv_second * h64_scont_i * f61_gamma + l64_scont_i * h64_cv_second * f61_gamma;
+                A2 += h64_cv_second * h64_scont_i * f61_gamma;
+            }
             // case on p[i] = 0 or p[i] = 1
             if (h64_p_i.val == 0) { // case 0
                 f61 shift = coeff * l64_p_i;
@@ -396,7 +420,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
                 C1 += mcoeff * (A1 * l64_p_i + A0);
                 C0 += coeff * A0 * l64_p_i;                
             }
-            coeff *= f61_chal;
+            coeff *= f61_chal;            
         }
 
         // mask the proofs with random_mask
@@ -436,19 +460,21 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 acc = f61::zero();
         f61 exp_proof = f61::zero();
 
-        for (int i = 0; i < path_length; i++) {
+        for (int i = 0; i < opt_length; i++) {
             // obtain high low
             f61 l64_mac_i = f61(LOW64(mac[i].value));
             f61 l64_p_i = f61(LOW64(p[i].value));
-            f61 l64_scont_i = f61(LOW64(s_cont[i].value));
-            f61 l64_cv_first = f61(LOW64(cv[2*i].value));
-            f61 l64_cv_second = f61(LOW64(cv[2*i+1].value));  
             // subtract mac[i] * p[i]          
             acc += f61::minor( (l64_mac_i * l64_p_i).val );
-            // add cv[2*i] * s_cont[i]
-            acc += l64_cv_first * l64_scont_i;
-            // add cv[2*i+1] * s_cont[i] * gamma
-            acc += l64_cv_second * l64_scont_i * gamma;
+            for (int j = 0; j < com_gcd; j++) {
+                f61 l64_scont_i = f61(LOW64(s_cont[i].value)) * f61_gamma_vec[j];
+                f61 l64_cv_first = f61(LOW64(cv[2*i*com_gcd+2*j].value));
+                f61 l64_cv_second = f61(LOW64(cv[2*i*com_gcd+2*j+1].value));  
+                // add cv[2*i] * s_cont[i]
+                acc += l64_cv_first * l64_scont_i;
+                // add cv[2*i+1] * s_cont[i] * gamma
+                acc += l64_cv_second * l64_scont_i * gamma;
+            }
             // update the expected proof
             exp_proof += coeff * acc * l64_p_i;
             coeff *= f61_chal;
@@ -494,11 +520,11 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 coeff = f61::unit();
         f61 C0 = f61::zero(), C1 = f61::zero();
         
-        for (int i = 0; i < path_length; i++) {
+        for (int i = 0; i < opt_length; i++) {
             f61 f61_p = f61(LOW64(p[i].value));
-            f61 f61_o = f61(LOW64(o[i].value));
+            f61 f61_o = f61(LOW64(o[i*com_gcd+com_gcd-1].value));
             C0 += coeff * f61_p * f61_o;
-            C1 += coeff * f61_p * f61(HIGH64(o[i].value)) + coeff * f61_o * f61(HIGH64(p[i].value));
+            C1 += coeff * f61_p * f61(HIGH64(o[i*com_gcd+com_gcd-1].value)) + coeff * f61_o * f61(HIGH64(p[i].value));
             coeff *= f61_chal;
         }
 
@@ -520,8 +546,8 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 coeff = f61::unit();
         f61 acc = f61::zero();
 
-        for (int i = 0; i < path_length; i++) {
-            acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(o[i].value));
+        for (int i = 0; i < opt_length; i++) {
+            acc += coeff * f61(LOW64(p[i].value)) * f61(LOW64(o[i*com_gcd+com_gcd-1].value));
             coeff *= f61_chal;
         }
 
@@ -555,16 +581,22 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
 
     // generate shift_l \odot (1,1,1,...,chi^?,...) \otimes cv
     // linear scan to generate (1,1,1,...,chi^?,...)
-    std::vector<IntFp> s_jump(path_length);
+    std::vector<IntFp> s_jump(opt_length);
     cur = IntFp(1, PUBLIC);
-    f61 tmp_chi = f61_chi2;
-    for (int i = 0; i < path_length; i++) {
+    f61 f61_chi2gcd(1);
+    // std::vector<f61> f61_chi_vector(com_gcd+1); f61_chi_vector[0] = f61_chi2gcd;
+    for (int i = 0; i < com_gcd; i++) {
+        f61_chi2gcd = f61_chi2gcd * f61_chi2;
+        // f61_chi_vector[i+1] = f61_chi2gcd;
+    }    
+    f61 tmp_chi = f61_chi2gcd;
+    for (int i = 0; i < opt_length; i++) {
         // s_jump[2*i] = s_jump[2*i+1] = cur;
         s_jump[i] = cur * shift_l.val;
         // update the next cur
         IntFp next_cur = p[i] * tmp_chi.val + (p[i].negate() + 1) * cur;
         cur = next_cur;
-        tmp_chi *= f61_chi2;
+        tmp_chi *= f61_chi2gcd;
     }
 
     // compute sum_r (inner-product on the right hand side)
@@ -597,7 +629,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 C0 = f61::zero(), C1 = f61::zero(), C2 = f61::zero();        
         for (int i = 0; i < path_length; i++) {
             // obtain high low
-            f61 h64_sjump_i = f61(HIGH64(s_jump[i].value)), l64_sjump_i = f61(LOW64(s_jump[i].value));
+            f61 h64_sjump_i = f61(HIGH64(s_jump[i/com_gcd].value)), l64_sjump_i = f61(LOW64(s_jump[i/com_gcd].value));
             f61 h64_cv_first = f61(HIGH64(cv[2*i].value)), l64_cv_first = f61(LOW64(cv[2*i].value));
             f61 h64_cv_second = f61(HIGH64(cv[2*i+1].value)), l64_cv_second = f61(LOW64(cv[2*i+1].value));
             f61 h64_in_i = f61(HIGH64(in[i].value)), l64_in_i = f61(LOW64(in[i].value));
@@ -644,7 +676,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
         f61 exp_proof = f61::zero();
         for (int i = 0; i < path_length; i++) {
             // obtain high low
-            f61 l64_sjump_i = f61(LOW64(s_jump[i].value));
+            f61 l64_sjump_i = f61(LOW64(s_jump[i/com_gcd].value));
             f61 l64_cv_first = f61(LOW64(cv[2*i].value));
             f61 l64_cv_second = f61(LOW64(cv[2*i+1].value));
             f61 l64_in_i = f61(LOW64(in[i].value));
