@@ -307,6 +307,16 @@ public:
         }
     }        
 
+    void rand_uniform_cpu(size_t cirsize) {
+        for (int i = 0; i < B; i++) {
+            br.push_back(Instruction(m, cirsize * (i+1)));
+            //br.push_back(Instruction(m, 125));
+            auto last = br.size();
+            //br[last - 1].rand_inst(gen);
+            br[last - 1].rand_inst_pselect(gen);
+        }
+    }        
+
     void print() {
         for (int i = 0; i < B; i++) {
             br[i].print();

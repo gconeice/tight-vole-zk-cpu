@@ -55,7 +55,7 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, size_t branch_size,
     }
 
     ZKCPU zkcpu(branch_size, reg_size, cir_seed);
-    zkcpu.rand_cpu();
+    zkcpu.rand_uniform_cpu(10);
     //zkcpu.print();
     zkcpu.print_file("cpu.cfg");
 
@@ -749,7 +749,7 @@ int main(int argc, char** argv) {
 	// }
 	
 
-	test_circuit_zk(ios, party, 50, 50, 50000);
+	test_circuit_zk(ios, party, 50, 50, 500000);
 
 	for(int i = 0; i < threads; ++i) {
 		delete ios[i]->io;
