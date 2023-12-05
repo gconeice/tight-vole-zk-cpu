@@ -21,8 +21,11 @@ Build and Install
 Browsing the code
 =====
 `/test/pathzk` contains our core code.
+
 `/emp-zk` contains the EMP Toolkit's ZK library.
+
 `/test/arith` contains the Batchman (baseline) implementations.
+
 `/zk-ram` contains the state-of-the-art ZK (balanced) ROM/RAM implementations.
 
 Test
