@@ -30,4 +30,4 @@ Browsing the code
 
 Test
 =====
-We will further detail how one can reproduce all results in the paper when we e-anonymize the repository.
+We will further explain how one can reproduce all results in the paper when we de-anonymize the repository.
