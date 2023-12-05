@@ -10,11 +10,11 @@ In our final open source version, we will further clarify all changes.
 
 MIT license is included as part of each repository.
 
-Setup Environment
+Setup environment
 =====
 `sudo bash setup.sh`
 
-Build and Install
+Build and install
 =====
 `bash install.sh`
 
