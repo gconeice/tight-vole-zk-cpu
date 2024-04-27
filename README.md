@@ -38,13 +38,13 @@ After compiling, the executable would show up in `build/bin`, including the foll
 
 `test_pathzk_comp_batchman_unbalance`: This is used to test our tight ZK CPU with unbalanced instructions and without the rounding optimization, compared to Batchman.
 
-`test_pathzk_comp_with_pub_cir`: This is used to test our tight ZK CPU with uniformly distributed sizes of instructions and without the rounding optimization, compared to the *insecure execution*. The execution would generate files that can be re-executed by the ``insecure execution'' with a same CPU configuration.
+`test_pathzk_comp_with_pub_cir`: This is used to test our tight ZK CPU with uniformly distributed sizes of instructions and without the rounding optimization, compared to the *insecure execution*. The execution would generate files that can be re-executed by the *insecure execution* with a same CPU configuration.
 
-`test_pathzk_comp_with_pub_cir_opt`: This is used to test our tight ZK CPU with uniformly distributed sizes of instructions and the rounding optimization, compared to the *insecure execution*. The execution would generate files that can be re-executed by the ``insecure execution'' with a same CPU configuration.
+`test_pathzk_comp_with_pub_cir_opt`: This is used to test our tight ZK CPU with uniformly distributed sizes of instructions and the rounding optimization, compared to the *insecure execution*. The execution would generate files that can be re-executed by the *insecure execution* with a same CPU configuration.
 
 `test_pathzk_fine_grain`: This is used to perform fine-grain analysis for our tight ZK CPU to generate the microbenchmarks.
 
-`test_pathzk_pub_cir`: This is the ``insecure execution'' baseline, where the entire execution path is revealed to the verifier.
+`test_pathzk_pub_cir`: This is the *insecure execution* baseline, where the entire execution path is revealed to the verifier.
 
 `test_pathzk_test`: This is the clean tight ZK CPU implementation, without any modification for comparison.
 
