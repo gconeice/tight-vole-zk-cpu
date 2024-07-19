@@ -16,6 +16,19 @@ using namespace std;
 int port, party;
 const int threads = 1;
 
+uint64_t comm(BoolIO<NetIO> *ios[threads]) {
+	uint64_t c = 0;
+	for(int i = 0; i < threads; ++i)
+		c += ios[i]->counter;
+	return c;
+}
+uint64_t comm2(BoolIO<NetIO> *ios[threads]) {
+	uint64_t c = 0;
+	for(int i = 0; i < threads; ++i)
+		c += ios[i]->io->counter;
+	return c;
+}
+
 inline uint64_t calculate_hash(PRP &prp, uint64_t x) {
 	block bk = makeBlock(0, x);
 	prp.permute_block(&bk, 1);
