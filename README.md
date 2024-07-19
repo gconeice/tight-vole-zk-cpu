@@ -71,7 +71,7 @@ On v's machine, execute: `./bin/`
 
 Here $IP is the P's IP address. If everything goes through, you should see the execution results on P and V. Starting from here, you can reproduce our results. (Details are listed below.)
 
-Benmark Summary
+Benchmark Summary
 =====
 `benchmark_summary.xlsx` recorded our experiments, which were used to plot our tables/figures in the paper.
 
