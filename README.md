@@ -49,6 +49,8 @@ After compiling, the executable would show up in `build/bin`, including the foll
 
 `test_pathzk_comp_batchman_unbalance`: This is used to test our tight ZK CPU with unbalanced instructions and without the rounding optimization, compared to Batchman.
 
+`test_pathzk_comp_batchman_uniform`: This is used to test our tight ZK CPU with varied sizes of instructions and without the rounding optimization, compared to Batchman.
+
 `test_pathzk_comp_with_pub_cir`: This is used to test our tight ZK CPU with uniformly distributed sizes of instructions and without the rounding optimization, compared to the *insecure execution*. The execution would generate files that can be re-executed by the *insecure execution* with a same CPU configuration.
 
 `test_pathzk_comp_with_pub_cir_opt`: This is used to test our tight ZK CPU with uniformly distributed sizes of instructions and the rounding optimization, compared to the *insecure execution*. The execution would generate files that can be re-executed by the *insecure execution* with a same CPU configuration.
@@ -65,9 +67,9 @@ You can use the following toy example to ensure that the compilation is successf
 
 Please `cd` to the `build` folder.
 
-On P's machine, execute: `./bin/`
+On P's machine, execute: `./bin/test_pathzk_test 1 12345 localhost`
 
-On v's machine, execute: `./bin/`
+On V's machine, execute: `./bin/test_pathzk_test 1 12345 $IP`
 
 Here $IP is the P's IP address. If everything goes through, you should see the execution results on P and V. Starting from here, you can reproduce our results. (Details are listed below.)
 

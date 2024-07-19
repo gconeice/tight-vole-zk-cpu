@@ -16,6 +16,8 @@ macro (add_test_case_with_run folder _name)
 endmacro()
 
 # Tetst Path ZK
+add_test_case_with_run(arith stack_batched_matmul_v1)
+
 add_test_case_with_run(pathzk test)
 add_test_case_with_run(pathzk comp_with_pub_cir)
 add_test_case_with_run(pathzk comp_with_pub_cir_opt)
