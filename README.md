@@ -1,24 +1,35 @@
-# TIGHT ZK CPU
+# VOLE-Based Tight ZK CPU
 
-This repository implements the tight ZK CPU protocol.
-See our paper for details.
+This is the artifact for the paper: **Tight ZK CPU: Batched ZK Branching with Cost Proportional to Evaluated Instruction** to be presented on ACM CCS 2024.
 
-Basis on EMP
+ePrint link: https://eprint.iacr.org/2024/456
+
+Base
 =====
-Our tight ZK CPU is based on (1) QuickSilver's (https://eprint.iacr.org/2021/076) repository, which is part of the EMP Toolkit: https://github.com/emp-toolkit/emp-zk; (2) Batchman's (https://github.com/gconeice/stacking-vole-zk) repository; and (3) the state-of-the-art ZK ROM/RAM (https://github.com/gconeice/improved-zk-ram) repository. In particular, we forked their repositories and developed based on them. We also tweak some of EMP's libraries.
-In our final open source version, we will further clarify all changes.
+Our tight ZK CPU is based on (1) QuickSilver's (https://eprint.iacr.org/2021/076) repository, which is part of the EMP Toolkit: https://github.com/emp-toolkit/emp-zk; (2) Batchman's (https://github.com/gconeice/stacking-vole-zk) repository; and (3) the state-of-the-art ZK ROM/RAM (https://github.com/gconeice/improved-zk-ram) repository. In particular, we forked the Batchman repo and developed based on it. We also tweak some of EMP's libraries.
 
 MIT license is included as part of each repository.
 
-Setup environment
+Hardware and OS
+=====
+Our experiments were performed over **two** AWS EC2 `m5.2xlarge` instances.
+One particular experiment was performed over **two** AWS EC `m5.8xlarge` instances because of our baseline needs more RAM.
+We used two machines to emulate ZK prover P and ZK verifier V.
+(It can also be executed over one single machine to emulate two parties via localhost.)
+We tested our code on a clean installation of `Ubuntu 22.04`, while we believe it also works on OS X and other versions of Ubuntu.
+
+The detailed hardware configuration can be found on: https://aws.amazon.com/ec2/instance-types/m5/.
+
+
+Setup Environment
 =====
 `sudo bash setup.sh`
 
-Build and install
+Build and Install
 =====
 `bash install.sh`
 
-Browsing the code
+Browsing the Code
 =====
 `/test/pathzk` contains our core code.
 
@@ -28,7 +39,7 @@ Browsing the code
 
 `/zk-ram` contains the state-of-the-art ZK (balanced) ROM/RAM implementations.
 
-Expected executable
+Expected Executable
 =====
 After compiling, the executable would show up in `build/bin`, including the following executables:
 
@@ -48,10 +59,50 @@ After compiling, the executable would show up in `build/bin`, including the foll
 
 `test_pathzk_test`: This is the clean tight ZK CPU implementation, without any modification for comparison.
 
-Benmark summary
+Toy Test Example
+=====
+You can use the following toy example to ensure that the compilation is successful.
+
+Please `cd` to the `build` folder.
+
+On P's machine, execute: `./bin/`
+
+On v's machine, execute: `./bin/`
+
+Here $IP is the P's IP address. If everything goes through, you should see the execution results on P and V. Starting from here, you can reproduce our results. (Details are listed below.)
+
+Benmark Summary
 =====
 `benchmark_summary.xlsx` recorded our experiments, which were used to plot our tables/figures in the paper.
 
-Test
+Reproduce the Result
 =====
-We will further explain how one can reproduce all results in the paper when we de-anonymize the repository.
+Please refer to `reproduce.pdf` to see how to get the numbers in `benchmark_summary.xlsx`.
+
+# How to Simulate Network Setting
+
+**We use `tc` command to simulate the network setting.**
+
+     DEV=lo
+     
+     sudo tc qdisc del dev $DEV root
+     
+     sudo tc qdisc add dev $DEV root handle 1: tbf rate 1Gbit burst 100000 limit 10000
+     
+     sudo tc qdisc add dev $DEV parent 1:1 handle 10: netem delay 2msec
+
+Change DEV to the network card you need (e.g., ens5).
+Note that `sudo tc qdisc del dev $DEV root` needs to be executed before resetting the network.
+It is used to clean the `tc` setting.
+
+Both P and V need to restrict the network, note that for 30ms latency, both parties should be set to `delay 15msec`.
+
+**You can use `iperf` to test the network throughput. Namely:**
+
+P: `iperf -s`
+
+V: `iperf -c [ip addr]`
+
+**You can use `ping` to test the network latency. Namely:**
+
+V: `ping [ip addr]`
