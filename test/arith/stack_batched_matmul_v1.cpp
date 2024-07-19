@@ -35,6 +35,9 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, int matrix_sz, int 
     uint64_t *res = new uint64_t[batch_sz];
     for (int i = 0; i < batch_sz; i++) res[i] = 0;
 
+    // testing communication
+    uint64_t com1 = comm(ios);
+	uint64_t com11 = comm2(ios);
 	auto start = clock_start();
 
 	setup_zk_arith<BoolIO<NetIO>>(ios, threads, party);
@@ -292,6 +295,10 @@ void test_circuit_zk(BoolIO<NetIO> *ios[threads], int party, int matrix_sz, int 
 	cout << matrix_sz << "\t" << timeuse << " us\t" << party << " " << endl;
 	std::cout << std::endl;
 
+	uint64_t com2 = comm(ios) - com1;
+	uint64_t com22 = comm2(ios) - com11;
+	std::cout << "communication (B): " << com2 << std::endl;
+	std::cout << "communication (B): " << com22 << std::endl;
 
 #if defined(__linux__)
 	struct rusage rusage;
