@@ -13,12 +13,13 @@ MIT license is included as part of each repository.
 Hardware and OS
 =====
 Our experiments were performed over **two** AWS EC2 `m5.2xlarge` instances.
-One particular experiment was performed over **two** AWS EC `m5.8xlarge` instances because of our baseline needs more RAM.
+One particular experiment was performed over **two** AWS EC `m5.8xlarge` instances because our baseline needs more RAM.
 We used two machines to emulate ZK prover P and ZK verifier V.
 (It can also be executed over one single machine to emulate two parties via localhost.)
-We tested our code on a clean installation of `Ubuntu 22.04`, while we believe it also works on OS X and other versions of Ubuntu.
+We tested our code on a clean installation of `Ubuntu 22.04`.
+(We believe it also works on OS X and other versions of Ubuntu.)
 
-The detailed hardware configuration can be found on: https://aws.amazon.com/ec2/instance-types/m5/.
+The detailed hardware configuration of AWS EC2 can be found on: https://aws.amazon.com/ec2/instance-types/m5/.
 
 
 Setup Environment
@@ -59,6 +60,8 @@ After compiling, the executable would show up in `build/bin`, including the foll
 
 `test_pathzk_pub_cir`: This is the *insecure execution* baseline, where the entire execution path is revealed to the verifier.
 
+`test_arith_stack_batched_matmul_v1`: This is the Batchman baseline.
+
 `test_pathzk_test`: This is the clean tight ZK CPU implementation, without any modification for comparison.
 
 Toy Test Example
@@ -71,7 +74,7 @@ On P's machine, execute: `./bin/test_pathzk_test 1 12345 localhost`
 
 On V's machine, execute: `./bin/test_pathzk_test 2 12345 $IP`
 
-Here $IP is the P's IP address. If everything goes through, you should see the execution results on P and V. Starting from here, you can reproduce our results. (Details are listed below.)
+Here, $IP denotes the P's IP address. If everything goes through, you should see the execution results on P and V. Starting from here, you can reproduce our results. (Details are listed below.)
 
 Benchmark Summary
 =====
