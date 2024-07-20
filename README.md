@@ -69,7 +69,7 @@ Please `cd` to the `build` folder.
 
 On P's machine, execute: `./bin/test_pathzk_test 1 12345 localhost`
 
-On V's machine, execute: `./bin/test_pathzk_test 1 12345 $IP`
+On V's machine, execute: `./bin/test_pathzk_test 2 12345 $IP`
 
 Here $IP is the P's IP address. If everything goes through, you should see the execution results on P and V. Starting from here, you can reproduce our results. (Details are listed below.)
 
