@@ -55,10 +55,10 @@ public:
         ROMTuple tmp;
         public_init_val.clear();
         for (int i = 0; i < N; i++) {
-            tmp.idx = IntFp(i, PUBLIC);
-            tmp.version = IntFp(0, PUBLIC);
-            tmp.val = IntFp(init_val[i], PUBLIC);
-            write_list.push_back(tmp);            
+            // tmp.idx = IntFp(i, PUBLIC);
+            // tmp.version = IntFp(0, PUBLIC);
+            // tmp.val = IntFp(init_val[i], PUBLIC);
+            // write_list.push_back(tmp);            
             public_init_val.push_back(init_val[i]);
             latest_pos.push_back(i);
         }
@@ -70,8 +70,8 @@ public:
         tmp_r.idx = tmp_w.idx = id;
         uint64_t pos = latest_pos[addr];
         // two inputs
-        IntFp old_version = IntFp(HIGH64(write_list[pos].version.value), ALICE);
-        IntFp old_val = IntFp(HIGH64(write_list[pos].val.value), ALICE);
+        IntFp old_version = IntFp(pos < N ? 0 : HIGH64(write_list[pos-N].version.value), ALICE);
+        IntFp old_val = IntFp(pos < N ? public_init_val[pos] : HIGH64(write_list[pos-N].val.value), ALICE);
         tmp_r.version = old_version;
         tmp_r.val = tmp_w.val = old_val;
         tmp_w.version = tmp_r.version + one;
@@ -306,8 +306,9 @@ public:
         for (int i = 0; i < N; i++) {
             tmp.idx = IntFp(i, PUBLIC);
             uint64_t pos = latest_pos[i]; // the last pos
-            tmp.version = IntFp(HIGH64(write_list[pos].version.value), ALICE);            
-            tmp.val = IntFp(HIGH64(write_list[pos].val.value), ALICE);
+            tmp.version = IntFp(pos < N ? 0 : HIGH64(write_list[pos-N].version.value), ALICE);            
+            //tmp.val = IntFp(HIGH64(write_list[pos].val.value), ALICE);
+            tmp.val = IntFp(public_init_val[i], PUBLIC);
             read_list.push_back(tmp);
         }
 
@@ -375,7 +376,7 @@ public:
             uint64_t tmp[block_size+1]; 
             for (int i = 0; i < block_size; i++, now_i++) {
                 IntFp tmp_r = now_i >= N+T ? IntFp(1, PUBLIC) : read_list[now_i].idx * A0 + read_list[now_i].version * A1 + read_list[now_i].val * A2 + X;
-                IntFp tmp_w = now_i >= T ? IntFp(1, PUBLIC) : write_list[N+now_i].idx * A0 + write_list[N+now_i].version * A1 + write_list[N+now_i].val * A2 + X;
+                IntFp tmp_w = now_i >= T ? IntFp(1, PUBLIC) : write_list[now_i].idx * A0 + write_list[now_i].version * A1 + write_list[now_i].val * A2 + X;
                 if (party == ALICE) { // Alice computes the coeffs to prove the commited product is well-formed
                     product_r = mult_mod(product_r, HIGH64(tmp_r.value));
                     product_w = mult_mod(product_w, HIGH64(tmp_w.value)); 
